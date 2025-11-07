@@ -352,16 +352,264 @@ class GraphSAGELayer(MessagePassing):
         return x_j
 
 
+class GraphTransformerLayer(MessagePassing):
+    """
+    Graph Transformer Layer with full attention mechanism.
+
+    More expressive than standard GNNs, uses attention over all graph connections.
+    """
+
+    def __init__(self, in_channels, out_channels, heads=8, dropout=0.1,
+                 edge_dim=None, bias=True):
+        super().__init__(aggr='add', node_dim=0)
+
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.heads = heads
+        self.dropout = dropout
+        self.edge_dim = edge_dim
+
+        assert out_channels % heads == 0
+        self.head_dim = out_channels // heads
+
+        # Multi-head attention components
+        self.lin_query = nn.Linear(in_channels, out_channels, bias=bias)
+        self.lin_key = nn.Linear(in_channels, out_channels, bias=bias)
+        self.lin_value = nn.Linear(in_channels, out_channels, bias=bias)
+
+        # Edge feature encoding (if provided)
+        if edge_dim is not None:
+            self.lin_edge = nn.Linear(edge_dim, heads, bias=False)
+        else:
+            self.lin_edge = None
+
+        # Output projection with residual
+        self.lin_out = nn.Linear(out_channels, out_channels, bias=bias)
+        self.lin_skip = nn.Linear(in_channels, out_channels, bias=bias)
+
+        # Layer normalization
+        self.norm1 = nn.LayerNorm(out_channels)
+        self.norm2 = nn.LayerNorm(out_channels)
+
+        # Feed-forward network
+        self.ffn = nn.Sequential(
+            nn.Linear(out_channels, out_channels * 4),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(out_channels * 4, out_channels),
+            nn.Dropout(dropout)
+        )
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        """Initialize parameters."""
+        self.lin_query.reset_parameters()
+        self.lin_key.reset_parameters()
+        self.lin_value.reset_parameters()
+        self.lin_out.reset_parameters()
+        self.lin_skip.reset_parameters()
+        if self.lin_edge is not None:
+            self.lin_edge.reset_parameters()
+        self.norm1.reset_parameters()
+        self.norm2.reset_parameters()
+        for layer in self.ffn:
+            if hasattr(layer, 'reset_parameters'):
+                layer.reset_parameters()
+
+    def forward(self, x, edge_index, edge_attr=None):
+        """
+        Forward pass with Transformer-style attention.
+
+        Args:
+            x: Node features [num_nodes, in_channels]
+            edge_index: Edge indices [2, num_edges]
+            edge_attr: Optional edge features [num_edges, edge_dim]
+
+        Returns:
+            Updated node features [num_nodes, out_channels]
+        """
+        # Compute Q, K, V
+        query = self.lin_query(x).view(-1, self.heads, self.head_dim)
+        key = self.lin_key(x).view(-1, self.heads, self.head_dim)
+        value = self.lin_value(x).view(-1, self.heads, self.head_dim)
+
+        # Message passing with attention
+        out = self.propagate(
+            edge_index,
+            query=query,
+            key=key,
+            value=value,
+            edge_attr=edge_attr
+        )
+
+        # Reshape and project
+        out = out.view(-1, self.out_channels)
+        out = self.lin_out(out)
+
+        # Residual connection and layer norm
+        out = out + self.lin_skip(x)
+        out = self.norm1(out)
+
+        # Feed-forward network with residual
+        out_ffn = self.ffn(out)
+        out = out + out_ffn
+        out = self.norm2(out)
+
+        return out
+
+    def message(self, query_i, key_j, value_j, edge_attr, index, ptr, size_i):
+        """
+        Compute attention-weighted messages.
+        """
+        # Compute attention scores (scaled dot-product)
+        attn = (query_i * key_j).sum(dim=-1) / (self.head_dim ** 0.5)
+
+        # Add edge features to attention if provided
+        if edge_attr is not None and self.lin_edge is not None:
+            edge_attn = self.lin_edge(edge_attr)
+            attn = attn + edge_attn
+
+        # Apply softmax
+        attn = softmax(attn, index, ptr, size_i)
+
+        # Apply dropout
+        if self.dropout > 0 and self.training:
+            attn = F.dropout(attn, p=self.dropout, training=self.training)
+
+        # Weight values by attention
+        return value_j * attn.unsqueeze(-1)
+
+
+class HeteroGNNLayer(nn.Module):
+    """
+    Heterogeneous GNN Layer for bipartite user-item graphs.
+
+    Handles different node types (users vs items) with separate transformations.
+    """
+
+    def __init__(self, in_channels_user, in_channels_item, out_channels,
+                 dropout=0.1, aggr='mean'):
+        super().__init__()
+
+        self.in_channels_user = in_channels_user
+        self.in_channels_item = in_channels_item
+        self.out_channels = out_channels
+        self.dropout = dropout
+
+        # Separate transformations for user and item nodes
+        self.user_transform = nn.Linear(in_channels_user, out_channels)
+        self.item_transform = nn.Linear(in_channels_item, out_channels)
+
+        # Message transformations for different edge types
+        self.user_to_item_msg = nn.Linear(in_channels_user, out_channels)
+        self.item_to_user_msg = nn.Linear(in_channels_item, out_channels)
+
+        # Attention weights for message aggregation
+        self.attn_user = nn.Linear(out_channels * 2, 1)
+        self.attn_item = nn.Linear(out_channels * 2, 1)
+
+        self.aggr = aggr
+
+    def forward(self, user_features, item_features, edge_index):
+        """
+        Forward pass for heterogeneous graph.
+
+        Args:
+            user_features: User node features [num_users, in_channels_user]
+            item_features: Item node features [num_items, in_channels_item]
+            edge_index: Edge indices [2, num_edges] (user indices in row 0)
+
+        Returns:
+            Updated user and item features
+        """
+        # Transform node features
+        user_emb = self.user_transform(user_features)
+        item_emb = self.item_transform(item_features)
+
+        # User -> Item messages
+        user_indices = edge_index[0]
+        item_indices = edge_index[1]
+
+        user_msgs = self.user_to_item_msg(user_features[user_indices])
+        item_msgs_agg = torch.zeros(item_features.size(0), self.out_channels,
+                                     device=item_features.device)
+        item_msgs_agg = item_msgs_agg.index_add_(0, item_indices, user_msgs)
+
+        # Item -> User messages
+        item_msgs = self.item_to_user_msg(item_features[item_indices])
+        user_msgs_agg = torch.zeros(user_features.size(0), self.out_channels,
+                                     device=user_features.device)
+        user_msgs_agg = user_msgs_agg.index_add_(0, user_indices, item_msgs)
+
+        # Update with residual connections
+        user_emb_new = user_emb + user_msgs_agg
+        item_emb_new = item_emb + item_msgs_agg
+
+        # Apply dropout
+        if self.dropout > 0:
+            user_emb_new = F.dropout(user_emb_new, p=self.dropout, training=self.training)
+            item_emb_new = F.dropout(item_emb_new, p=self.dropout, training=self.training)
+
+        return user_emb_new, item_emb_new
+
+
+class ResidualGNNBlock(nn.Module):
+    """
+    Residual GNN Block with skip connections for deeper models.
+    """
+
+    def __init__(self, channels, layer_type='gcn', num_layers=2, dropout=0.1):
+        super().__init__()
+
+        self.layers = nn.ModuleList()
+        self.norms = nn.ModuleList()
+
+        for _ in range(num_layers):
+            if layer_type == 'gcn':
+                layer = SparseGCNLayer(channels, channels)
+            elif layer_type == 'sage':
+                layer = GraphSAGELayer(channels, channels)
+            elif layer_type == 'causal':
+                layer = CausalGNNLayer(channels, channels, dropout=dropout)
+            else:
+                raise ValueError(f"Unknown layer type: {layer_type}")
+
+            self.layers.append(layer)
+            self.norms.append(nn.LayerNorm(channels))
+
+        self.dropout = dropout
+        self.activation = nn.GELU()
+
+    def forward(self, x, edge_index, edge_weight=None):
+        """
+        Forward pass with residual connections.
+        """
+        identity = x
+
+        for layer, norm in zip(self.layers, self.norms):
+            x = layer(x, edge_index, edge_weight)
+            x = norm(x)
+            x = self.activation(x)
+            if self.dropout > 0:
+                x = F.dropout(x, p=self.dropout, training=self.training)
+
+        # Residual connection
+        x = x + identity
+
+        return x
+
+
 def create_gnn_layer(layer_type, in_channels, out_channels, **kwargs):
     """
     Factory function to create GNN layers.
-    
+
     Args:
-        layer_type: Type of layer ('causal', 'temporal', 'gcn', 'sage')
+        layer_type: Type of layer ('causal', 'temporal', 'gcn', 'sage', 'transformer', 'hetero')
         in_channels: Input feature dimension
         out_channels: Output feature dimension
         **kwargs: Additional layer-specific arguments
-        
+
     Returns:
         GNN layer instance
     """
@@ -373,6 +621,10 @@ def create_gnn_layer(layer_type, in_channels, out_channels, **kwargs):
         return SparseGCNLayer(in_channels, out_channels, **kwargs)
     elif layer_type == 'sage':
         return GraphSAGELayer(in_channels, out_channels, **kwargs)
+    elif layer_type == 'transformer':
+        return GraphTransformerLayer(in_channels, out_channels, **kwargs)
+    elif layer_type == 'residual':
+        return ResidualGNNBlock(in_channels, **kwargs)
     else:
         raise ValueError(f"Unknown layer type: {layer_type}")
 

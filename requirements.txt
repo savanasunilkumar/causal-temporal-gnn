@@ -25,6 +25,7 @@ torch-cluster>=1.6.0
 
 # Visualization and logging
 matplotlib>=3.4.0
+seaborn>=0.11.0
 tqdm>=4.62.0
 # tensorboard>=2.8.0  # Optional: uncomment for TensorBoard logging
 # wandb>=0.12.0  # Optional: uncomment for Weights & Biases logging
@@ -37,4 +38,27 @@ flake8>=4.0.0
 # Benchmarking dependencies
 psutil>=5.9.0  # Memory monitoring
 requests>=2.28.0  # Dataset download
+
+# Production Serving (NEW)
+fastapi>=0.95.0
+uvicorn>=0.21.0
+pydantic>=2.0.0
+
+# Hyperparameter Optimization (NEW)
+optuna>=3.1.0
+# plotly>=5.14.0  # Optional: for Optuna visualization
+
+# Fast Similarity Search (NEW)
+# faiss-cpu>=1.7.4  # For CPU-only systems
+# faiss-gpu>=1.7.4  # For GPU systems (install one, not both)
+
+# Model Export & Optimization (NEW)
+# onnx>=1.13.0  # Optional: for ONNX export
+# onnxruntime>=1.14.0  # Optional: for ONNX inference
+
+# Monitoring & Metrics (NEW)
+# prometheus-client>=0.16.0  # Optional: for Prometheus monitoring
+
+# Advanced ML (NEW - mostly optional)
+# gym>=0.26.0  # Optional: for reinforcement learning environments
 
