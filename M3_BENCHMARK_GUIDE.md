@@ -2,7 +2,7 @@
 
 ## Overview
 
-Complete benchmarking suite for testing the Causal Temporal GNN on Apple M3 (8GB memory) against standard baselines using MovieLens 100K dataset.
+Benchmarking suite for testing the Causal Temporal GNN on Apple M3 (8GB memory) against standard baselines using the MovieLens 100K dataset.
 
 ## Quick Start
 
@@ -18,17 +18,17 @@ open benchmark_results/movielens_100k/benchmark_report.txt
 open benchmark_results/movielens_100k/plots/metrics_comparison.png
 ```
 
-## What Gets Benchmarked
+## Models Benchmarked
 
 ### 1. Popular Items
 - **Method**: Frequency-based recommendations
 - **Complexity**: O(1) prediction
-- **Use**: Simplest baseline
+- **Use**: Simple baseline
 
 ### 2. BPR (Bayesian Personalized Ranking)
 - **Method**: Matrix factorization with pairwise ranking
 - **Reference**: Rendle et al. UAI 2009
-- **Use**: Classic collaborative filtering baseline
+- **Use**: Collaborative filtering baseline
 
 ### 3. NCF (Neural Collaborative Filtering)
 - **Method**: Deep MLP for user-item interaction
@@ -38,12 +38,11 @@ open benchmark_results/movielens_100k/plots/metrics_comparison.png
 ### 4. LightGCN
 - **Method**: Simplified graph convolution
 - **Reference**: He et al. SIGIR 2020
-- **Use**: State-of-the-art GNN baseline
+- **Use**: GNN baseline
 
 ### 5. Causal Temporal GNN (Ours)
 - **Method**: Causal discovery + temporal attention + GNN
 - **Features**: Multi-modal, zero-shot, temporal dynamics
-- **Use**: Your complete system
 
 ## Dataset: MovieLens 100K
 
@@ -77,32 +76,6 @@ All models evaluated using:
 - **NDCG@10**: Normalized Discounted Cumulative Gain (ranking quality)
 - **MRR**: Mean Reciprocal Rank (position of first relevant item)
 - **Hit Rate@10**: Fraction of users with at least one relevant item
-
-## Expected Results
-
-### Performance (NDCG@10)
-```
-CausalGNN  > LightGCN > NCF > BPR > Popular
-~0.058       ~0.055     ~0.052  ~0.050  ~0.041
-```
-
-### Training Time (M3 8GB)
-```
-Popular:   ~1 second
-BPR:       ~3-4 minutes
-NCF:       ~4-5 minutes
-LightGCN:  ~5-6 minutes
-CausalGNN: ~6-8 minutes
-```
-
-### Memory Usage
-```
-Popular:   <100 MB
-BPR:       ~500 MB
-NCF:       ~600 MB
-LightGCN:  ~800 MB
-CausalGNN: ~1.2 GB
-```
 
 ## Output Files
 
@@ -200,31 +173,6 @@ pip install torch torchvision
 pip install torch-geometric torch-scatter torch-sparse
 ```
 
-## For Publication
-
-This benchmark provides publication-ready results:
-
-1. **Fair Comparison**: Same data splits, evaluation protocol
-2. **Standard Baselines**: Well-cited methods from literature
-3. **Comprehensive Metrics**: Multiple evaluation measures
-4. **Reproducible**: Fixed random seeds, documented setup
-5. **Visualizations**: Professional plots for papers
-
-### Citation-Ready Format
-
-```
-We evaluate our Causal Temporal GNN against four baselines
-on MovieLens 100K (100K interactions, 943 users, 1,682 items):
-
-- Popular: Frequency-based recommendations
-- BPR: Bayesian Personalized Ranking [Rendle et al., UAI 2009]
-- NCF: Neural Collaborative Filtering [He et al., WWW 2017]
-- LightGCN: Simplified GCN [He et al., SIGIR 2020]
-
-Results show our method achieves NDCG@10 of 0.058, outperforming
-the best baseline (LightGCN: 0.055) by 5.5%.
-```
-
 ## Next Steps
 
 1. **Run on larger datasets**: MovieLens 1M, 10M, or 20M
@@ -232,10 +180,4 @@ the best baseline (LightGCN: 0.055) by 5.5%.
 3. **Add more baselines**: GNN-based methods, transformers
 4. **Cross-dataset evaluation**: Test generalization
 5. **Statistical significance**: Multiple runs with different seeds
-
----
-
-**Date Created**: October 28, 2025
-**Version**: 1.0
-**Status**: Production Ready ✅
 

@@ -1,31 +1,29 @@
-# Enhanced Universal Adaptive Causal Temporal GNN (UACT-GNN)
+# Causal Temporal GNN (UACT-GNN)
 
-A **world-class, PyTorch Geometric-based** production-ready recommendation system optimized for heavy datasets (100M-1B+ interactions). Combines cutting-edge techniques including causal discovery, temporal modeling, multi-modal learning, and graph neural networks.
-
-**✅ Professor Approved • ✅ PyG-Based • ✅ 5-15x Faster • ✅ Production-Ready**
+A production-ready recommendation system optimized for large-scale datasets (100M-1B+ interactions). This system combines causal discovery, temporal modeling, multi-modal learning, and graph neural networks using PyTorch Geometric.
 
 ## Features
 
 ### Core Capabilities
-- **PyTorch Geometric Integration** ⭐: Industry-standard GNN framework with optimized message passing (2-5x faster)
-- **Advanced Causal Discovery**: Implements Granger causality and PC algorithm to discover causal relationships
-- **Temporal Modeling**: Captures temporal dynamics using PyG attention layers and transformers
-- **Multi-Modal Learning**: Processes text, images, numeric, and categorical features
-- **Sparse Graph Operations**: Efficient sparse tensors for 5-10x memory reduction
-- **Neighbor Sampling**: Handle graphs that don't fit in GPU memory (100M-1B+ interactions)
-- **Zero-Shot Cold Start**: Handles new users/items using pretrained models and learnable fusion
-- **Universal Data Processing**: Automatically detects and processes various data formats (CSV, JSON, Parquet)
+- **PyTorch Geometric Integration**: Uses industry-standard GNN framework with optimized message passing.
+- **Causal Discovery**: Implements Granger causality and PC algorithm to discover causal relationships.
+- **Temporal Modeling**: Captures temporal dynamics using attention layers and transformers.
+- **Multi-Modal Learning**: Processes text, images, numeric, and categorical features.
+- **Sparse Graph Operations**: Efficient sparse tensors for memory reduction.
+- **Neighbor Sampling**: Handles graphs that do not fit in GPU memory.
+- **Zero-Shot Cold Start**: Handles new users/items using pretrained models and learnable fusion.
+- **Universal Data Processing**: Automatically detects and processes various data formats (CSV, JSON, Parquet).
 
 ### Production Features
-- **PyG Message Passing**: Optimized C++/CUDA kernels for 2-5x speedup
-- **Gradient Checkpointing**: 50-70% memory reduction for deep models
-- **Causal Graph Caching**: Precompute once, load instantly (10-50x faster)
-- **Distributed Training**: Multi-GPU support with PyTorch DDP
-- **Mixed Precision Training**: FP16/BF16 for 2-3x memory reduction
-- **Model Checkpointing**: Automatic save/resume with best-k checkpoint management
-- **Experiment Logging**: Support for Weights & Biases and TensorBoard
-- **GPU Profiling**: Monitor memory and performance bottlenecks
-- **Comprehensive Evaluation**: Precision, Recall, NDCG, Hit Ratio metrics
+- **Optimized Message Passing**: C++/CUDA kernels for improved speed.
+- **Gradient Checkpointing**: Memory reduction for deep models.
+- **Causal Graph Caching**: Precompute and load causal graphs efficiently.
+- **Distributed Training**: Multi-GPU support with PyTorch DDP.
+- **Mixed Precision Training**: FP16/BF16 support.
+- **Model Checkpointing**: Automatic save/resume functionality.
+- **Experiment Logging**: Support for Weights & Biases and TensorBoard.
+- **GPU Profiling**: Monitor memory and performance bottlenecks.
+- **Comprehensive Evaluation**: Precision, Recall, NDCG, Hit Ratio metrics.
 
 ## Installation
 
@@ -36,7 +34,7 @@ A **world-class, PyTorch Geometric-based** production-ready recommendation syste
 git clone <repository-url>
 cd CausalGNN
 
-# Install core dependencies (includes PyTorch Geometric!)
+# Install core dependencies
 pip install -r requirements.txt
 
 # For CUDA 11.8 (recommended)
@@ -48,7 +46,7 @@ pip install torch-geometric torch-scatter torch-sparse torch-cluster -f https://
 For advanced features, install optional dependencies:
 
 ```bash
-# For faster PyG operations (highly recommended)
+# For faster PyG operations
 pip install pyg-lib
 
 # For advanced causal discovery
@@ -90,7 +88,7 @@ python causal_gnn/scripts/preprocess.py --create_sample
 ### 3. Train the Model
 
 ```bash
-# Basic training (PyG automatically used!)
+# Basic training
 python causal_gnn/scripts/train.py \
     --data_path ./data/interactions.csv \
     --embedding_dim 64 \
@@ -99,7 +97,7 @@ python causal_gnn/scripts/train.py \
     --batch_size 1024 \
     --use_amp
 
-# For HEAVY datasets (100M+ interactions)
+# For large datasets (100M+ interactions)
 python causal_gnn/scripts/train.py \
     --data_path ./data/heavy_interactions.csv \
     --embedding_dim 128 \
@@ -157,9 +155,9 @@ metrics = rec_system.evaluate('test', k_values=[5, 10, 20])
 recommendations, scores = rec_system.generate_recommendations(user_id=1, top_k=10)
 ```
 
-## 🧪 M3 Benchmarking (Apple Silicon)
+## Benchmarking
 
-For testing on Apple M3 with 8GB memory, run the complete benchmark suite:
+For testing on Apple M3 with 8GB memory, run the benchmark suite:
 
 ```bash
 python benchmark_m3.py
@@ -168,21 +166,8 @@ python benchmark_m3.py
 **Features:**
 - Auto-downloads MovieLens 100K dataset
 - Benchmarks 5 models: Popular, BPR, NCF, LightGCN, CausalGNN
-- M3-optimized (uses MPS acceleration, small batches)
+- Optimized for Apple Silicon (MPS acceleration)
 - Saves comprehensive results and plots
-
-**Expected output:**
-```
-Model                P@10      R@10      NDCG@10   MRR       Time(min)
-------------------------------------------------------------------------
-Popular              0.0320    0.0145    0.0412    0.0678    0.02
-BPR                  0.0389    0.0176    0.0498    0.0821    3.50
-NCF                  0.0412    0.0187    0.0521    0.0863    4.20
-LightGCN             0.0435    0.0196    0.0547    0.0891    5.10
-CausalGNN (Ours)     0.0450    0.0220    0.0580    0.0950    6.50
-```
-
-Results saved to `benchmark_results/movielens_100k/` including JSON metrics, report, and comparison plots.
 
 ### Distributed Training
 
@@ -282,7 +267,7 @@ Minimum required columns:
 
 ## Performance Optimizations
 
-### For Heavy Datasets (100M+ interactions)
+### For Large Datasets (100M+ interactions)
 
 1. **Enable Mixed Precision**: `use_amp=True` (2-3x memory reduction)
 2. **Use Distributed Training**: Multi-GPU support via PyTorch DDP
@@ -306,7 +291,7 @@ If you use this code in your research, please cite:
 
 ```bibtex
 @software{uact_gnn_2024,
-  title={Enhanced Universal Adaptive Causal Temporal GNN},
+  title={Causal Temporal GNN},
   author={Your Name},
   year={2024},
   url={https://github.com/yourusername/CausalGNN}
@@ -336,4 +321,3 @@ This implementation builds upon research in:
 - Temporal Modeling
 - Multi-Modal Learning
 - Recommendation Systems
-
