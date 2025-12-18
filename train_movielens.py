@@ -45,6 +45,18 @@ except ImportError:
 from causal_gnn.config import Config
 from causal_gnn.training import RecommendationSystem, UncertaintyAwareRecommendationSystem
 
+# Import publication metrics (optional)
+PUBLICATION_METRICS_AVAILABLE = False
+try:
+    from causal_gnn.evaluation import (
+        generate_publication_metrics,
+        generate_all_publication_figures,
+        format_latex_table,
+    )
+    PUBLICATION_METRICS_AVAILABLE = True
+except ImportError:
+    pass
+
 
 def download_movielens(dataset='ml-100k', data_dir='./data'):
     """Download and prepare MovieLens dataset."""
@@ -297,6 +309,85 @@ def save_results(results_dir, metrics, config, train_history, recommendations=No
     return summary_path
 
 
+def generate_publication_outputs(results_dir, system, args):
+    """Generate publication-ready metrics and figures."""
+    if not PUBLICATION_METRICS_AVAILABLE:
+        print("Skipping publication outputs (evaluation module not available)")
+        return None
+
+    if not args.use_uncertainty:
+        print("Skipping publication outputs (uncertainty not enabled)")
+        return None
+
+    print("\nGenerating publication-ready outputs...")
+
+    # Create publication subdirectory
+    pub_dir = os.path.join(results_dir, 'publication')
+    os.makedirs(pub_dir, exist_ok=True)
+
+    try:
+        # Get uncertainty predictions on test set
+        if hasattr(system, 'evaluate_with_uncertainty'):
+            unc_results = system.evaluate_with_uncertainty('test', k_values=[10])
+
+            # Generate publication metrics
+            confidences = np.array(unc_results.get('confidences', []))
+            predictions = np.array(unc_results.get('predictions', []))
+            labels = np.array(unc_results.get('labels', []))
+
+            if len(confidences) > 0 and len(labels) > 0:
+                pub_metrics = generate_publication_metrics(
+                    predictions=predictions,
+                    labels=labels,
+                    uncertainties=1 - confidences,  # Convert confidence to uncertainty
+                    n_bins=15
+                )
+
+                # Generate all publication figures
+                generate_all_publication_figures(
+                    pub_metrics,
+                    output_dir=pub_dir,
+                    dataset_name=args.dataset.upper(),
+                    model_name='UA-CTGNN'
+                )
+
+                # Generate LaTeX table
+                latex_table = format_latex_table(
+                    {args.dataset.upper(): pub_metrics},
+                    metrics=['ece', 'mce', 'brier_score', 'auroc_uncertainty', 'coverage_at_90_accuracy']
+                )
+
+                # Save LaTeX table
+                latex_path = os.path.join(pub_dir, 'metrics_table.tex')
+                with open(latex_path, 'w') as f:
+                    f.write(latex_table)
+                print(f"LaTeX metrics table saved to: {latex_path}")
+
+                # Save publication metrics as JSON
+                metrics_path = os.path.join(pub_dir, 'publication_metrics.json')
+                pub_metrics_dict = {
+                    'ece': pub_metrics.expected_calibration_error,
+                    'mce': pub_metrics.maximum_calibration_error,
+                    'brier_score': pub_metrics.brier_score,
+                    'auroc_uncertainty': pub_metrics.auroc_uncertainty,
+                    'coverage_at_90_accuracy': pub_metrics.coverage_at_90_accuracy,
+                    'auc_accuracy_coverage': pub_metrics.auc_accuracy_coverage,
+                    'uncertainty_error_correlation': pub_metrics.uncertainty_error_correlation,
+                }
+                with open(metrics_path, 'w') as f:
+                    json.dump(pub_metrics_dict, f, indent=2)
+                print(f"Publication metrics saved to: {metrics_path}")
+
+                return pub_metrics
+
+    except Exception as e:
+        print(f"Warning: Could not generate publication outputs: {e}")
+        import traceback
+        traceback.print_exc()
+
+    return None
+
+
 def plot_training_curves(results_dir, train_history):
     """Generate training curve plots."""
     if not MATPLOTLIB_AVAILABLE:
@@ -480,6 +571,11 @@ def run_training(args):
     # Plot training curves
     plot_training_curves(results_dir, train_history)
 
+    # Generate publication-ready outputs (if uncertainty enabled)
+    pub_metrics = generate_publication_outputs(results_dir, system, args)
+    if pub_metrics:
+        print(f"Publication figures saved to: {os.path.join(results_dir, 'publication')}")
+
     # Save model
     model_path = os.path.join(results_dir, 'models', 'final_model.pt')
     system.save_model(model_path)
@@ -494,6 +590,9 @@ def run_training(args):
     print(f"  - Metrics: {os.path.join(results_dir, 'metrics', 'final_metrics.json')}")
     print(f"  - Model: {model_path}")
     print(f"  - Training curves: {os.path.join(results_dir, 'plots', 'training_curves.png')}")
+    if args.use_uncertainty and pub_metrics:
+        print(f"  - Publication figures: {os.path.join(results_dir, 'publication')}")
+        print(f"  - LaTeX table: {os.path.join(results_dir, 'publication', 'metrics_table.tex')}")
 
     return test_metrics, results_dir
 
