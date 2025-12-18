@@ -25,13 +25,36 @@ import numpy as np
 import pandas as pd
 import torch
 
+# Check optional dependencies
+MATPLOTLIB_AVAILABLE = False
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    print("Warning: matplotlib not available. Training curves will not be plotted.")
+    print("Install with: pip install matplotlib")
+
+REQUESTS_AVAILABLE = False
+try:
+    import requests
+    REQUESTS_AVAILABLE = True
+except ImportError:
+    print("Warning: requests not available. Cannot auto-download datasets.")
+    print("Install with: pip install requests")
+
 from causal_gnn.config import Config
 from causal_gnn.training import RecommendationSystem, UncertaintyAwareRecommendationSystem
 
 
 def download_movielens(dataset='ml-100k', data_dir='./data'):
     """Download and prepare MovieLens dataset."""
-    import requests
+    if not REQUESTS_AVAILABLE:
+        raise ImportError(
+            "The 'requests' package is required to download datasets. "
+            "Install with: pip install requests\n"
+            "Or manually download MovieLens from https://grouplens.org/datasets/movielens/"
+        )
+
     import zipfile
 
     os.makedirs(data_dir, exist_ok=True)
@@ -276,41 +299,40 @@ def save_results(results_dir, metrics, config, train_history, recommendations=No
 
 def plot_training_curves(results_dir, train_history):
     """Generate training curve plots."""
-    try:
-        import matplotlib.pyplot as plt
+    if not MATPLOTLIB_AVAILABLE:
+        print("Skipping plots (matplotlib not installed)")
+        print("To enable plots: pip install matplotlib")
+        return
 
-        # Plot training loss
-        if train_history.get('train_loss'):
-            plt.figure(figsize=(12, 5))
+    # Plot training loss
+    if train_history.get('train_loss'):
+        plt.figure(figsize=(12, 5))
 
-            # Loss plot
-            plt.subplot(1, 2, 1)
-            plt.plot(train_history['train_loss'], 'b-', linewidth=2)
-            plt.xlabel('Epoch')
-            plt.ylabel('Loss')
-            plt.title('Training Loss')
-            plt.grid(True, alpha=0.3)
+        # Loss plot
+        plt.subplot(1, 2, 1)
+        plt.plot(train_history['train_loss'], 'b-', linewidth=2)
+        plt.xlabel('Epoch')
+        plt.ylabel('Loss')
+        plt.title('Training Loss')
+        plt.grid(True, alpha=0.3)
 
-            # Validation metrics plot
-            plt.subplot(1, 2, 2)
-            val_metrics = train_history.get('val_metrics', {})
-            for key, values in val_metrics.items():
-                if isinstance(values, list) and 'ndcg' in key.lower():
-                    plt.plot(values, label=key, linewidth=2)
-            plt.xlabel('Epoch')
-            plt.ylabel('Score')
-            plt.title('Validation Metrics')
-            plt.legend()
-            plt.grid(True, alpha=0.3)
+        # Validation metrics plot
+        plt.subplot(1, 2, 2)
+        val_metrics = train_history.get('val_metrics', {})
+        for key, values in val_metrics.items():
+            if isinstance(values, list) and 'ndcg' in key.lower():
+                plt.plot(values, label=key, linewidth=2)
+        plt.xlabel('Epoch')
+        plt.ylabel('Score')
+        plt.title('Validation Metrics')
+        plt.legend()
+        plt.grid(True, alpha=0.3)
 
-            plt.tight_layout()
-            plot_path = os.path.join(results_dir, 'plots', 'training_curves.png')
-            plt.savefig(plot_path, dpi=150, bbox_inches='tight')
-            plt.close()
-            print(f"Training curves plot saved to: {plot_path}")
-
-    except ImportError:
-        print("matplotlib not available, skipping plots")
+        plt.tight_layout()
+        plot_path = os.path.join(results_dir, 'plots', 'training_curves.png')
+        plt.savefig(plot_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        print(f"Training curves plot saved to: {plot_path}")
 
 
 def run_training(args):
