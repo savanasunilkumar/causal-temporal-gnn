@@ -23,10 +23,21 @@ class Config:
         self.causal_strength = kwargs.get('causal_strength', 0.5)
         
         # Causal Discovery
-        self.causal_method = kwargs.get('causal_method', 'advanced')  # 'simple', 'advanced'
+        self.causal_method = kwargs.get('causal_method', 'advanced')  # 'simple', 'advanced', 'bayesian'
         self.significance_level = kwargs.get('significance_level', 0.05)
         self.max_lag = kwargs.get('max_lag', 5)
         self.min_causal_strength = kwargs.get('min_causal_strength', 0.1)
+
+        # Uncertainty Quantification (Novel contribution)
+        self.use_uncertainty = kwargs.get('use_uncertainty', False)
+        self.mc_dropout_samples = kwargs.get('mc_dropout_samples', 10)  # Monte Carlo dropout samples
+        self.uncertainty_weight = kwargs.get('uncertainty_weight', 0.1)  # Weight for uncertainty loss
+        self.min_variance = kwargs.get('min_variance', 1e-6)  # Minimum variance for numerical stability
+        self.n_bootstrap_samples = kwargs.get('n_bootstrap_samples', 100)  # Bootstrap samples for causal discovery
+        self.causal_prior_precision = kwargs.get('causal_prior_precision', 1.0)  # Prior precision for Bayesian causal
+        self.confidence_threshold = kwargs.get('confidence_threshold', 0.5)  # Threshold for confident predictions
+        self.calibration_bins = kwargs.get('calibration_bins', 10)  # Bins for calibration metrics
+        self.abstention_threshold = kwargs.get('abstention_threshold', 0.7)  # Uncertainty threshold for abstention
         
         # Training Configuration
         self.learning_rate = kwargs.get('learning_rate', 0.001)
