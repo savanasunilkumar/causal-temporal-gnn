@@ -125,9 +125,10 @@ class UncertaintyAwareCausalTemporalGNN(nn.Module):
         nn.init.normal_(self.causal_embedding.weight, mean=0, std=0.1)
 
         # Initialize log-variances to small values (low initial uncertainty)
-        nn.init.constant_(self.user_embedding_log_var.weight, -2.0)
-        nn.init.constant_(self.item_embedding_log_var.weight, -2.0)
-        nn.init.constant_(self.temporal_embedding_log_var.weight, -2.0)
+        initial_log_var = getattr(self.config, 'initial_log_variance', -2.0)
+        nn.init.constant_(self.user_embedding_log_var.weight, initial_log_var)
+        nn.init.constant_(self.item_embedding_log_var.weight, initial_log_var)
+        nn.init.constant_(self.temporal_embedding_log_var.weight, initial_log_var)
 
     def set_causal_graph(
         self,
@@ -187,8 +188,9 @@ class UncertaintyAwareCausalTemporalGNN(nn.Module):
         if self.edge_weight_mean is None:
             # Default uniform weights with low uncertainty
             num_edges = edge_index.size(1)
+            default_var = getattr(self.config, 'default_edge_weight_var', 0.01)
             edge_weight_mean = torch.ones(num_edges, device=edge_index.device)
-            edge_weight_var = torch.ones(num_edges, device=edge_index.device) * 0.01
+            edge_weight_var = torch.ones(num_edges, device=edge_index.device) * default_var
         else:
             edge_weight_mean = self.edge_weight_mean
             edge_weight_var = self.edge_weight_var
@@ -356,6 +358,53 @@ class UncertaintyAwareCausalTemporalGNN(nn.Module):
 
         return top_indices, top_scores, top_confidence, uncertain_flags
 
+    def predict_with_uncertainty(
+        self,
+        user_indices: torch.Tensor,
+        item_indices: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_timestamps: torch.Tensor,
+        time_indices: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Predict scores with uncertainty for specific user-item pairs.
+
+        Args:
+            user_indices: User indices
+            item_indices: Item indices
+            edge_index: Graph edges
+            edge_timestamps: Edge timestamps
+            time_indices: Node time indices
+
+        Returns:
+            Tuple of (scores, uncertainties)
+        """
+        self.eval()
+        with torch.no_grad():
+            _, user_emb_mean, item_emb_mean, out_var, _ = self.forward(
+                edge_index, edge_timestamps, time_indices
+            )
+            user_emb_var = out_var[:self.num_users]
+            item_emb_var = out_var[self.num_users:]
+
+            # Get embeddings for specific pairs
+            u_mean = user_emb_mean[user_indices]
+            u_var = user_emb_var[user_indices]
+            i_mean = item_emb_mean[item_indices]
+            i_var = item_emb_var[item_indices]
+
+            # Compute scores
+            scores = torch.sum(u_mean * i_mean, dim=1)
+
+            # Compute uncertainty (variance of dot product)
+            score_var = torch.sum(
+                u_var * i_mean**2 + i_var * u_mean**2 + u_var * i_var,
+                dim=1
+            )
+            uncertainties = torch.sqrt(score_var + self.min_variance)
+
+        return scores, uncertainties
+
     def compute_uncertainty_loss(
         self,
         pos_scores_mean: torch.Tensor,
@@ -467,15 +516,38 @@ class UncertaintyCalibrator(nn.Module):
     that confidence scores match empirical accuracy.
     """
 
-    def __init__(self, embed_dim: int):
+    def __init__(self, initial_temperature: float = 1.0, embed_dim: int = None):
         super().__init__()
-        self.temperature = nn.Parameter(torch.ones(1))
+        self.temperature = nn.Parameter(torch.tensor([initial_temperature]))
         self.recalibrator = nn.Sequential(
             nn.Linear(2, 16),
             nn.ReLU(),
             nn.Linear(16, 1),
             nn.Sigmoid()
         )
+
+    def calibrate(self, scores: torch.Tensor, labels: torch.Tensor, lr: float = 0.01, max_iter: int = 50):
+        """
+        Learn optimal temperature from validation data.
+
+        Args:
+            scores: Prediction scores
+            labels: Ground truth labels
+            lr: Learning rate for optimization
+            max_iter: Maximum iterations
+        """
+        self.temperature.requires_grad = True
+        optimizer = torch.optim.LBFGS([self.temperature], lr=lr, max_iter=max_iter)
+
+        def closure():
+            optimizer.zero_grad()
+            calibrated = scores / self.temperature
+            loss = F.binary_cross_entropy_with_logits(calibrated, labels)
+            loss.backward()
+            return loss
+
+        optimizer.step(closure)
+        self.temperature.requires_grad = False
 
     def forward(
         self,

@@ -175,13 +175,16 @@ class UncertaintyAwareRecommendationSystem(RecommendationSystem):
 
     def _compute_uncertainty_loss(self, user_indices, pos_item_indices, neg_item_indices):
         """Compute combined BPR loss and uncertainty loss."""
-        # Forward pass with uncertainty
-        (user_emb_mean, user_emb_var,
-         item_emb_mean, item_emb_var) = self.model.forward(
+        # Forward pass with uncertainty - returns (all_mean, user_mean, item_mean, all_var, confidence)
+        _, user_emb_mean, item_emb_mean, all_var, _ = self.model.forward(
             self.edge_index, self.edge_timestamps, self.time_indices
         )
 
-        # Get embeddings
+        # Split variance into user and item components
+        user_emb_var = all_var[:self.model.num_users]
+        item_emb_var = all_var[self.model.num_users:]
+
+        # Get embeddings for batch
         users_mean = user_emb_mean[user_indices]
         users_var = user_emb_var[user_indices]
         pos_items_mean = item_emb_mean[pos_item_indices]
@@ -207,8 +210,9 @@ class UncertaintyAwareRecommendationSystem(RecommendationSystem):
             dim=1
         )
 
-        # BPR loss
-        bpr_loss = -torch.mean(torch.log(torch.sigmoid(pos_scores - neg_scores) + 1e-10))
+        # BPR loss (using config epsilon for numerical stability)
+        bpr_epsilon = getattr(self.config, 'bpr_epsilon', 1e-10)
+        bpr_loss = -torch.mean(torch.log(torch.sigmoid(pos_scores - neg_scores) + bpr_epsilon))
 
         # Uncertainty loss: encourage higher uncertainty for close scores
         score_diff = torch.abs(pos_scores - neg_scores)
@@ -240,12 +244,12 @@ class UncertaintyAwareRecommendationSystem(RecommendationSystem):
             weight_decay=0
         )
 
-        # Learning rate scheduler
+        # Learning rate scheduler (using config parameters)
         scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
             optimizer,
-            T_0=10,
-            T_mult=2,
-            eta_min=self.config.learning_rate * 0.01
+            T_0=getattr(self.config, 'scheduler_t0', 10),
+            T_mult=getattr(self.config, 'scheduler_t_mult', 2),
+            eta_min=self.config.learning_rate * getattr(self.config, 'scheduler_eta_min_factor', 0.01)
         )
 
         # Mixed precision training
@@ -421,8 +425,9 @@ class UncertaintyAwareRecommendationSystem(RecommendationSystem):
         self.model.eval()
 
         with torch.no_grad():
-            # Sample users for uncertainty evaluation
-            sample_users = eval_data['user_idx'].unique()[:min(100, len(eval_data['user_idx'].unique()))]
+            # Sample users for uncertainty evaluation (using config parameter)
+            max_eval_users = getattr(self.config, 'eval_sample_users', 100)
+            sample_users = eval_data['user_idx'].unique()[:min(max_eval_users, len(eval_data['user_idx'].unique()))]
 
             all_predictions = []
             all_uncertainties = []
@@ -435,14 +440,18 @@ class UncertaintyAwareRecommendationSystem(RecommendationSystem):
                 # Get top-k recommendations with uncertainty
                 user_tensor = torch.tensor([user_idx], dtype=torch.long, device=self.device)
 
-                recs = self.model.recommend_items_with_uncertainty(
-                    user_tensor, k=max(k_values),
-                    edge_index=self.edge_index,
-                    edge_timestamps=self.edge_timestamps,
-                    time_indices=self.time_indices
+                # recommend_items_with_uncertainty returns (top_indices, top_scores, top_confidence, uncertain_flags)
+                top_indices, top_scores, top_confidence, _ = self.model.recommend_items_with_uncertainty(
+                    user_tensor,
+                    top_k=max(k_values),
+                    excluded_items={user_idx: list(self.user_interactions.get(user_idx, set()))},
+                    confidence_threshold=self.config.confidence_threshold
                 )
 
-                for item_idx, score, confidence in recs[0]:
+                # Process results - tensors are [batch, k]
+                for i in range(top_indices.size(1)):
+                    item_idx = top_indices[0, i].item()
+                    confidence = top_confidence[0, i].item()
                     all_predictions.append(1 if item_idx in pos_items else 0)
                     all_uncertainties.append(1 - confidence)
                     all_labels.append(1 if item_idx in pos_items else 0)
@@ -465,7 +474,7 @@ class UncertaintyAwareRecommendationSystem(RecommendationSystem):
         return standard_metrics
 
     def generate_recommendations_with_uncertainty(self, user_id, top_k=10,
-                                                   mc_samples=None):
+                                                   use_mc_dropout=False):
         """
         Generate recommendations with uncertainty estimates.
 
@@ -477,30 +486,32 @@ class UncertaintyAwareRecommendationSystem(RecommendationSystem):
             raise ValueError(f"User ID {user_id} not found in the dataset")
 
         user_idx = self.data['user_id_map'][user_id]
-
-        if mc_samples is None:
-            mc_samples = self.config.mc_dropout_samples
-
         user_tensor = torch.tensor([user_idx], dtype=torch.long, device=self.device)
 
         # Get recommendations with uncertainty
-        recs = self.model.recommend_items_with_uncertainty(
-            user_tensor, k=top_k,
-            edge_index=self.edge_index,
-            edge_timestamps=self.edge_timestamps,
-            time_indices=self.time_indices,
-            excluded_items={user_idx: list(self.user_interactions[user_idx])},
-            mc_samples=mc_samples
+        # Returns (top_indices, top_scores, top_confidence, uncertain_flags)
+        top_indices, top_scores, top_confidence, uncertain_flags = self.model.recommend_items_with_uncertainty(
+            user_tensor,
+            top_k=top_k,
+            excluded_items={user_idx: list(self.user_interactions.get(user_idx, set()))},
+            confidence_threshold=self.config.confidence_threshold,
+            use_mc_dropout=use_mc_dropout
         )
 
         # Convert to output format
         recommendations = []
-        for item_idx, score, confidence in recs[0]:
+        for i in range(top_indices.size(1)):
+            item_idx = top_indices[0, i].item()
+            score = top_scores[0, i].item()
+            confidence = top_confidence[0, i].item()
+            is_uncertain = uncertain_flags[0, i].item()
+
             item_id = self.item_index_to_id[item_idx]
             recommendations.append({
                 'item_id': item_id,
                 'score': float(score),
                 'confidence': float(confidence),
+                'is_uncertain': bool(is_uncertain),
                 'should_recommend': confidence >= self.config.confidence_threshold
             })
 

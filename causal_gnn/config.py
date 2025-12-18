@@ -38,6 +38,15 @@ class Config:
         self.confidence_threshold = kwargs.get('confidence_threshold', 0.5)  # Threshold for confident predictions
         self.calibration_bins = kwargs.get('calibration_bins', 10)  # Bins for calibration metrics
         self.abstention_threshold = kwargs.get('abstention_threshold', 0.7)  # Uncertainty threshold for abstention
+        self.initial_log_variance = kwargs.get('initial_log_variance', -2.0)  # Initial log variance for embeddings
+        self.default_edge_weight_var = kwargs.get('default_edge_weight_var', 0.01)  # Default edge weight variance
+        self.eval_sample_users = kwargs.get('eval_sample_users', 100)  # Max users for uncertainty evaluation
+        self.bpr_epsilon = kwargs.get('bpr_epsilon', 1e-10)  # Small constant for BPR loss stability
+
+        # Learning Rate Scheduler
+        self.scheduler_t0 = kwargs.get('scheduler_t0', 10)  # Initial restart period
+        self.scheduler_t_mult = kwargs.get('scheduler_t_mult', 2)  # Period multiplier after restart
+        self.scheduler_eta_min_factor = kwargs.get('scheduler_eta_min_factor', 0.01)  # Min LR as fraction of initial
         
         # Training Configuration
         self.learning_rate = kwargs.get('learning_rate', 0.001)
