@@ -5,7 +5,7 @@ import torch
 from collections import defaultdict
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, f as f_distribution
 
 # For causal discovery
 try:
@@ -106,14 +106,25 @@ class CausalGraphConstructor:
                 mse_both = np.mean((model_both.predict(X) - y) ** 2)
                 
                 # F-statistic for Granger causality
-                if mse_target_only > 1e-6:  # Avoid division by zero
-                    f_stat = ((mse_target_only - mse_both) / max_lag) / (mse_both / (len(y) - 2 * max_lag))
-                    
-                    # Convert to p-value (simplified F-distribution approximation)
-                    p_value = 1 / (1 + f_stat) if f_stat > 0 else 1.0
-                    
+                n_obs = len(y)
+                df1 = max_lag  # Number of restrictions (source lags)
+                df2 = n_obs - 2 * max_lag  # Residual degrees of freedom
+
+                if mse_target_only > 1e-6 and mse_both > 1e-6 and df2 > 0:
+                    # Proper F-statistic calculation
+                    f_stat = ((mse_target_only - mse_both) / df1) / (mse_both / df2)
+
+                    # Proper p-value calculation using F-distribution survival function
+                    if f_stat > 0:
+                        p_value = f_distribution.sf(f_stat, df1, df2)
+                    else:
+                        p_value = 1.0
+
                     if p_value < self.significance_level:
-                        causal_strength = min(1.0, f_stat / 10)  # Normalize to [0, 1]
+                        # Normalize causal strength based on effect size
+                        # Use partial R-squared as a measure of effect size
+                        partial_r2 = (mse_target_only - mse_both) / mse_target_only
+                        causal_strength = min(1.0, max(0.0, partial_r2))
                         if causal_strength > self.min_causal_strength:
                             causal_matrix[i, j] = causal_strength
         

@@ -45,8 +45,9 @@ env/
 *.pth
 *.ckpt
 
-# Data and outputs
+# Data and outputs (exclude code directories)
 data/
+!causal_gnn/data/
 output/
 logs/
 checkpoints/

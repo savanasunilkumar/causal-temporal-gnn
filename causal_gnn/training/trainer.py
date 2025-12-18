@@ -270,14 +270,25 @@ class RecommendationSystem:
         """Sample negative items for a user."""
         if self.negative_sampler is not None:
             return self.negative_sampler.sample(user_idx, n_neg)
-        
-        # Fallback to simple sampling
-        positive_items = self.user_interactions[user_idx]
+
+        # Fallback to simple sampling with max attempts to prevent infinite loops
+        positive_items = self.user_interactions.get(user_idx, set())
         neg_items = []
-        while len(neg_items) < n_neg:
+        max_attempts = n_neg * 20  # Reasonable upper bound
+
+        attempts = 0
+        while len(neg_items) < n_neg and attempts < max_attempts:
             neg_item = random.randint(0, self.metadata['num_items'] - 1)
             if neg_item not in positive_items and neg_item not in neg_items:
                 neg_items.append(neg_item)
+            attempts += 1
+
+        # If still not enough negatives, fill with any non-duplicate items
+        while len(neg_items) < n_neg:
+            neg_item = random.randint(0, self.metadata['num_items'] - 1)
+            if neg_item not in neg_items:
+                neg_items.append(neg_item)
+
         return neg_items
     
     def bpr_loss(self, pos_scores, neg_scores):
