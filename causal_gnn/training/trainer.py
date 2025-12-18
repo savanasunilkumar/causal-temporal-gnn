@@ -238,12 +238,23 @@ class RecommendationSystem:
         self.model.edge_timestamps = self.edge_timestamps
         self.model.time_indices = self.time_indices
         
-        # Initialize negative sampler
-        self.negative_sampler = NegativeSampler(
-            self.metadata['num_items'],
-            self.user_interactions,
-            device=self.device
-        )
+        # Initialize negative sampler (use mixed sampler for better NDCG if enabled)
+        if getattr(self.config, 'use_hard_negatives', False):
+            from ..data.samplers import MixedNegativeSampler
+            self.negative_sampler = MixedNegativeSampler(
+                self.metadata['num_items'],
+                self.user_interactions,
+                device=self.device,
+                hard_ratio=getattr(self.config, 'hard_negative_ratio', 0.5),
+                pool_size=getattr(self.config, 'hard_negative_pool_size', 100),
+            )
+            self.logger.info(f"Using MixedNegativeSampler with {self.config.hard_negative_ratio*100:.0f}% hard negatives")
+        else:
+            self.negative_sampler = NegativeSampler(
+                self.metadata['num_items'],
+                self.user_interactions,
+                device=self.device
+            )
         
         # Initialize evaluator
         self.evaluator = Evaluator(self.model, device=self.device)

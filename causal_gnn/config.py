@@ -16,10 +16,10 @@ class Config:
         self.model_type = kwargs.get('model_type', 'enhanced_uact_gnn')
         
         # Model Architecture
-        self.embedding_dim = kwargs.get('embedding_dim', 64)
+        self.embedding_dim = kwargs.get('embedding_dim', 128)  # Larger for better representation
         self.num_layers = kwargs.get('num_layers', 3)
-        self.time_steps = kwargs.get('time_steps', 10)
-        self.dropout = kwargs.get('dropout', 0.1)
+        self.time_steps = kwargs.get('time_steps', 16)  # More temporal granularity
+        self.dropout = kwargs.get('dropout', 0.2)  # Slightly higher for regularization
         self.causal_strength = kwargs.get('causal_strength', 0.5)
         
         # Causal Discovery
@@ -50,12 +50,20 @@ class Config:
         
         # Training Configuration
         self.learning_rate = kwargs.get('learning_rate', 0.001)
-        self.batch_size = kwargs.get('batch_size', 1024)
-        self.num_epochs = kwargs.get('num_epochs', 20)
-        self.neg_samples = kwargs.get('neg_samples', 1)
-        self.weight_decay = kwargs.get('weight_decay', 0.0001)
+        self.batch_size = kwargs.get('batch_size', 2048)
+        self.num_epochs = kwargs.get('num_epochs', 50)
+        self.neg_samples = kwargs.get('neg_samples', 4)  # Increased for better discrimination
+        self.weight_decay = kwargs.get('weight_decay', 1e-5)  # Reduced for larger models
         self.contrastive_weight = kwargs.get('contrastive_weight', 0.1)
-        self.early_stopping_patience = kwargs.get('early_stopping_patience', 5)
+        self.early_stopping_patience = kwargs.get('early_stopping_patience', 10)
+
+        # Hard Negative Sampling (significant NDCG improvement)
+        self.use_hard_negatives = kwargs.get('use_hard_negatives', True)
+        self.hard_negative_ratio = kwargs.get('hard_negative_ratio', 0.5)  # 50% hard, 50% random
+        self.hard_negative_pool_size = kwargs.get('hard_negative_pool_size', 100)  # Top-k popular items as candidates
+
+        # Layer Normalization (stabilizes training)
+        self.use_layer_norm = kwargs.get('use_layer_norm', True)
         
         # Data Processing
         self.min_user_interactions = kwargs.get('min_user_interactions', 5)
