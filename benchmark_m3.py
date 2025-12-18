@@ -291,10 +291,10 @@ def benchmark_causal_gnn(train_data, val_data, test_data, num_users, num_items, 
     print("\n" + "="*80)
     print("BENCHMARKING: Causal Temporal GNN (Ours)")
     print("="*80)
-    
+
     start_time = time.time()
     start_memory = get_memory_usage()
-    
+
     # M3-optimized config
     config = Config(
         device=device,
@@ -303,44 +303,120 @@ def benchmark_causal_gnn(train_data, val_data, test_data, num_users, num_items, 
         batch_size=256,
         num_epochs=num_epochs,
         learning_rate=0.001,
-        causal_method='granger',
+        causal_method='simple',  # Use simple method for faster benchmark
         use_amp=False,
         use_gradient_checkpointing=False,
         use_neighbor_sampling=False,
         data_dir='./data/movielens_100k',
         output_dir='./benchmark_results/movielens_100k',
+        checkpoint_dir='./benchmark_results/checkpoints',
+        log_dir='./benchmark_results/logs',
+        early_stopping_patience=3,  # Faster early stopping for benchmark
+        save_every_n_epochs=num_epochs + 1,  # Don't save during benchmark
     )
-    
-    # Note: This is a simplified benchmark version
-    # For full training, use the complete RecommendationSystem workflow
-    print("Note: Using simplified evaluation for benchmark consistency")
-    print("For full Causal GNN capabilities, use the complete training pipeline")
-    
-    # For now, return placeholder results
-    # In a full implementation, you would integrate with the RecommendationSystem
-    
-    training_time = time.time() - start_time
-    peak_memory = get_memory_usage() - start_memory
-    
-    # Placeholder metrics (slightly better than baselines to show potential)
-    metrics = {
-        'precision@10': 0.045,
-        'recall@10': 0.022,
-        'ndcg@10': 0.058,
-        'mrr': 0.095,
-        'hit_rate@10': 0.135,
-    }
-    
-    print(f"Training Time: {training_time:.2f}s")
-    print(f"Memory Usage: {peak_memory:.2f} MB")
-    print(f"Metrics: {metrics}")
-    
-    return {
-        'metrics': metrics,
-        'training_time': training_time,
-        'memory_mb': peak_memory,
-        'history': {'loss': []}
-    }
+
+    try:
+        # Initialize the recommendation system
+        rec_system = RecommendationSystem(config)
+
+        # Prepare data in expected format - create combined data with proper schema
+        all_data = pd.concat([train_data, val_data, test_data], ignore_index=True)
+
+        # Since data is already split, we'll work directly with indices
+        rec_system.data['preprocessed_data'] = all_data
+        rec_system.data['schema'] = {
+            'user_columns': ['user_idx'],
+            'item_columns': ['item_idx'],
+            'interaction_columns': ['rating'] if 'rating' in all_data.columns else [],
+            'temporal_columns': ['timestamp'] if 'timestamp' in all_data.columns else [],
+            'text_columns': [],
+            'numeric_columns': [],
+            'categorical_columns': [],
+            'image_columns': [],
+            'context_columns': [],
+        }
+
+        # Set metadata
+        rec_system.metadata = {
+            'num_users': num_users,
+            'num_items': num_items,
+            'num_interactions': len(all_data),
+        }
+
+        # Create ID mappings (identity since already indexed)
+        rec_system.user_index_to_id = {i: i for i in range(num_users)}
+        rec_system.item_index_to_id = {i: i for i in range(num_items)}
+        rec_system.data['user_id_map'] = {i: i for i in range(num_users)}
+        rec_system.data['item_id_map'] = {i: i for i in range(num_items)}
+
+        # Set train/val/test data
+        rec_system.data['train_data'] = train_data.copy()
+        rec_system.data['val_data'] = val_data.copy()
+        rec_system.data['test_data'] = test_data.copy()
+
+        # Build user interactions from training data
+        from collections import defaultdict
+        rec_system.user_interactions = defaultdict(set)
+        for _, row in train_data.iterrows():
+            rec_system.user_interactions[int(row['user_idx'])].add(int(row['item_idx']))
+
+        # Create graph
+        rec_system.create_graph()
+
+        # Initialize model
+        rec_system.initialize_model()
+
+        # Train the model
+        train_history = rec_system.train()
+
+        # Evaluate on test set
+        test_metrics = rec_system.evaluate('test', k_values=[10])
+
+        training_time = time.time() - start_time
+        peak_memory = get_memory_usage() - start_memory
+
+        # Format metrics
+        metrics = {
+            'precision@10': test_metrics['precision'][10],
+            'recall@10': test_metrics['recall'][10],
+            'ndcg@10': test_metrics['ndcg'][10],
+            'mrr': test_metrics.get('mrr', {}).get(10, 0.0),
+            'hit_rate@10': test_metrics['hit_ratio'][10],
+        }
+
+        print(f"Training Time: {training_time:.2f}s")
+        print(f"Memory Usage: {peak_memory:.2f} MB")
+        print(f"Metrics: {metrics}")
+
+        return {
+            'metrics': metrics,
+            'training_time': training_time,
+            'memory_mb': peak_memory,
+            'history': train_history
+        }
+
+    except Exception as e:
+        print(f"Error during Causal GNN benchmark: {e}")
+        import traceback
+        traceback.print_exc()
+
+        training_time = time.time() - start_time
+        peak_memory = get_memory_usage() - start_memory
+
+        # Return fallback metrics indicating failure
+        return {
+            'metrics': {
+                'precision@10': 0.0,
+                'recall@10': 0.0,
+                'ndcg@10': 0.0,
+                'mrr': 0.0,
+                'hit_rate@10': 0.0,
+            },
+            'training_time': training_time,
+            'memory_mb': peak_memory,
+            'history': {'loss': []},
+            'error': str(e)
+        }
 
 
 def main():

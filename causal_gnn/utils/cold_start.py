@@ -48,7 +48,12 @@ class ColdStartSolver:
         
         if VISION_AVAILABLE:
             print("Loading ResNet18 for image features...")
-            self.pretrained_models['vision'] = models.resnet18(pretrained=True)
+            # Use weights parameter (new API) with fallback to pretrained (deprecated)
+            try:
+                self.pretrained_models['vision'] = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+            except (TypeError, AttributeError):
+                # Fallback for older torchvision versions
+                self.pretrained_models['vision'] = models.resnet18(pretrained=True)
             self.pretrained_models['vision_transform'] = transforms.Compose([
                 transforms.Resize(256),
                 transforms.CenterCrop(224),
