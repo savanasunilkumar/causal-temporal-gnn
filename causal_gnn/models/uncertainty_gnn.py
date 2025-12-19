@@ -373,6 +373,28 @@ class UncertaintyAwareCausalTemporalGNN(nn.Module):
 
         return top_indices, top_scores, top_confidence, uncertain_flags
 
+    def recommend_items(
+        self,
+        user_indices: torch.Tensor,
+        top_k: int = 10,
+        excluded_items: Optional[Dict[int, List[int]]] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Generate recommendations (compatibility wrapper for evaluator).
+
+        Args:
+            user_indices: User indices to recommend for
+            top_k: Number of recommendations
+            excluded_items: Items to exclude per user
+
+        Returns:
+            Tuple of (top_indices, top_scores)
+        """
+        top_indices, top_scores, _, _ = self.recommend_items_with_uncertainty(
+            user_indices, top_k, excluded_items
+        )
+        return top_indices, top_scores
+
     def predict_with_uncertainty(
         self,
         user_indices: torch.Tensor,
