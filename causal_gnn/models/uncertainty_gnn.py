@@ -87,6 +87,14 @@ class UncertaintyAwareCausalTemporalGNN(nn.Module):
             ) for _ in range(self.num_layers)
         ])
 
+        # Layer normalization for training stability (optional but recommended)
+        self.use_layer_norm = getattr(config, 'use_layer_norm', True)
+        if self.use_layer_norm:
+            self.layer_norms = nn.ModuleList([
+                nn.LayerNorm(self.embedding_dim) for _ in range(self.num_layers)
+            ])
+            self.final_layer_norm = nn.LayerNorm(self.embedding_dim)
+
         # Temporal attention with uncertainty
         self.temporal_attention = UncertainTemporalAttention(
             self.embedding_dim,
@@ -195,10 +203,17 @@ class UncertaintyAwareCausalTemporalGNN(nn.Module):
             edge_weight_mean = self.edge_weight_mean
             edge_weight_var = self.edge_weight_var
 
-        # Apply uncertainty-aware causal layers
+        # Apply uncertainty-aware causal layers with optional layer normalization
         h_mean, h_var = all_emb_mean, all_emb_var
-        for layer in self.causal_layers:
+        for i, layer in enumerate(self.causal_layers):
             h_mean, h_var = layer(h_mean, edge_index, edge_weight_mean, edge_weight_var)
+            # Apply layer normalization for training stability
+            if self.use_layer_norm:
+                h_mean = self.layer_norms[i](h_mean)
+
+        # Apply final layer norm before temporal attention
+        if self.use_layer_norm:
+            h_mean = self.final_layer_norm(h_mean)
 
         # Apply temporal attention with uncertainty
         h_mean, h_var = self.temporal_attention(

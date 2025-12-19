@@ -134,9 +134,9 @@ class CausalTemporalGNN(nn.Module):
     def _compute_causal_graph(self, edge_index, edge_timestamps, node_features):
         """Compute causal relationships using advanced techniques."""
         if self.config.causal_method == 'advanced':
-            interaction_data = edge_index.cpu().numpy()
-            node_features_np = node_features.cpu().numpy()
-            edge_timestamps_np = edge_timestamps.cpu().numpy()
+            interaction_data = edge_index.detach().cpu().numpy()
+            node_features_np = node_features.detach().cpu().numpy()
+            edge_timestamps_np = edge_timestamps.detach().cpu().numpy()
             
             causal_edges, edge_weights = self.causal_constructor.compute_hybrid_causal_graph(
                 interaction_data, node_features_np, edge_timestamps_np

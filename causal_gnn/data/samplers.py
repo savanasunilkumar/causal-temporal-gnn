@@ -269,6 +269,135 @@ class HardNegativeSampler(NegativeSampler):
         return neg_items[:num_negatives]
 
 
+class MixedNegativeSampler(NegativeSampler):
+    """
+    Mixed negative sampler combining hard negatives (popular items) with random negatives.
+
+    This is the recommended sampler for improving NDCG/Recall without needing
+    pre-computed embeddings. Hard negatives from popular items force the model
+    to learn better discrimination.
+
+    Research shows 50% hard + 50% random works well.
+    """
+
+    def __init__(
+        self,
+        num_items: int,
+        user_interactions: Dict[int, Set[int]],
+        device: Union[str, torch.device] = 'cpu',
+        hard_ratio: float = 0.5,
+        pool_size: int = 100,
+        item_popularity: Optional[np.ndarray] = None,
+    ):
+        """
+        Initialize mixed negative sampler.
+
+        Args:
+            num_items: Total number of items
+            user_interactions: Dictionary mapping user_idx to set of positive items
+            device: Device for tensor operations
+            hard_ratio: Ratio of hard negatives (0.0 = all random, 1.0 = all hard)
+            pool_size: Number of top popular items to sample hard negatives from
+            item_popularity: Item popularity counts (computed if not provided)
+        """
+        super().__init__(num_items, user_interactions, device, strategy='uniform')
+        self.hard_ratio = hard_ratio
+        self.pool_size = min(pool_size, num_items)
+
+        # Compute item popularity if not provided
+        if item_popularity is not None:
+            self.item_popularity = item_popularity
+        else:
+            self.item_popularity = np.zeros(num_items)
+            for items in user_interactions.values():
+                for item in items:
+                    if item < num_items:
+                        self.item_popularity[item] += 1
+
+        # Get top popular items for hard negative pool
+        self.popular_items = np.argsort(self.item_popularity)[-self.pool_size:][::-1]
+
+        # Compute sampling probabilities for hard negatives (proportional to popularity)
+        popular_counts = self.item_popularity[self.popular_items]
+        popular_counts = popular_counts + 1  # Smoothing
+        self.hard_probs = popular_counts / popular_counts.sum()
+
+    def sample(self, user_idx: int, num_negatives: int = 1) -> List[int]:
+        """
+        Sample mix of hard and random negatives.
+
+        Args:
+            user_idx: User index
+            num_negatives: Number of negative samples to generate
+
+        Returns:
+            List of negative item indices
+        """
+        positive_items = self.user_interactions.get(user_idx, set())
+
+        # Determine number of hard vs random negatives
+        num_hard = int(num_negatives * self.hard_ratio)
+        num_random = num_negatives - num_hard
+
+        neg_items = []
+        max_attempts = num_negatives * 20
+
+        # Sample hard negatives from popular items pool
+        attempts = 0
+        while len(neg_items) < num_hard and attempts < max_attempts:
+            idx = np.random.choice(len(self.popular_items), p=self.hard_probs)
+            neg_item = self.popular_items[idx]
+            if neg_item not in positive_items and neg_item not in neg_items:
+                neg_items.append(neg_item)
+            attempts += 1
+
+        # Sample random negatives
+        attempts = 0
+        while len(neg_items) < num_hard + num_random and attempts < max_attempts:
+            neg_item = np.random.randint(0, self.num_items)
+            if neg_item not in positive_items and neg_item not in neg_items:
+                neg_items.append(neg_item)
+            attempts += 1
+
+        # Fallback if we couldn't get enough
+        while len(neg_items) < num_negatives:
+            neg_item = np.random.randint(0, self.num_items)
+            if neg_item not in neg_items:
+                neg_items.append(neg_item)
+
+        return neg_items
+
+    def sample_batch(
+        self,
+        user_indices: Union[List[int], np.ndarray, torch.Tensor],
+        num_negatives: int = 1,
+        return_tensor: bool = True,
+    ) -> Union[torch.Tensor, np.ndarray]:
+        """
+        Sample mixed negatives for a batch of users.
+
+        Args:
+            user_indices: Array of user indices
+            num_negatives: Number of negative samples per user
+            return_tensor: Whether to return a PyTorch tensor
+
+        Returns:
+            Array of shape (batch_size, num_negatives) with negative item indices
+        """
+        if isinstance(user_indices, torch.Tensor):
+            user_indices = user_indices.cpu().numpy()
+
+        batch_size = len(user_indices)
+        neg_items = np.zeros((batch_size, num_negatives), dtype=np.int64)
+
+        for i, user_idx in enumerate(user_indices):
+            neg_items[i] = self.sample(int(user_idx), num_negatives)
+
+        if return_tensor:
+            return torch.tensor(neg_items, dtype=torch.long, device=self.device)
+        return neg_items
+
+
 class DynamicNegativeSampler:
     """
     Dynamic negative sampler that updates item popularity during training.
