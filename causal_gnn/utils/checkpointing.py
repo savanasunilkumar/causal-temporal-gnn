@@ -3,8 +3,26 @@
 import os
 import torch
 import json
+import numpy as np
 from pathlib import Path
 from typing import Optional, Dict, Any
+
+
+def convert_to_serializable(obj):
+    """Convert numpy types to Python native types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: convert_to_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_to_serializable(v) for v in obj]
+    elif isinstance(obj, (np.bool_, np.bool)):
+        return bool(obj)
+    elif isinstance(obj, (np.integer, np.int64, np.int32)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
 
 
 class ModelCheckpointer:
@@ -74,11 +92,11 @@ class ModelCheckpointer:
         # Save metadata
         metadata_path = self.checkpoint_dir / f'checkpoint_epoch_{epoch}_metadata.json'
         with open(metadata_path, 'w') as f:
-            json.dump({
+            json.dump(convert_to_serializable({
                 'epoch': epoch,
                 'metrics': metrics,
                 'is_best': is_best
-            }, f, indent=2)
+            }), f, indent=2)
         
         print(f"Saved checkpoint to {checkpoint_path}")
         return str(checkpoint_path)
