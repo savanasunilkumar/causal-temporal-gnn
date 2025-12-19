@@ -299,9 +299,19 @@ def save_results(results_dir, metrics, config, train_history, recommendations=No
             for metric_name, values in metrics.items():
                 if isinstance(values, dict):
                     for k, v in values.items():
-                        f.write(f"  {metric_name.upper()}@{k}: {v:.4f}\n")
-                else:
+                        if isinstance(v, (int, float)):
+                            f.write(f"  {metric_name.upper()}@{k}: {v:.4f}\n")
+                        elif isinstance(v, dict):
+                            # Handle nested dicts
+                            for k2, v2 in v.items():
+                                if isinstance(v2, (int, float)):
+                                    f.write(f"  {metric_name.upper()}@{k}@{k2}: {v2:.4f}\n")
+                        else:
+                            f.write(f"  {metric_name.upper()}@{k}: {v}\n")
+                elif isinstance(values, (int, float)):
                     f.write(f"  {metric_name}: {values:.4f}\n")
+                else:
+                    f.write(f"  {metric_name}: {values}\n")
 
         f.write("\n" + "=" * 80 + "\n")
 
