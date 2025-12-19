@@ -14,7 +14,7 @@ def convert_to_serializable(obj):
         return {k: convert_to_serializable(v) for k, v in obj.items()}
     elif isinstance(obj, list):
         return [convert_to_serializable(v) for v in obj]
-    elif isinstance(obj, (np.bool_, np.bool)):
+    elif isinstance(obj, np.bool_):
         return bool(obj)
     elif isinstance(obj, (np.integer, np.int64, np.int32)):
         return int(obj)
