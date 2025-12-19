@@ -474,9 +474,9 @@ class BayesianCausalGraphConstructor:
         time_step_interactions = defaultdict(list)
 
         if isinstance(edge_timestamps, torch.Tensor):
-            edge_timestamps = edge_timestamps.cpu().numpy()
+            edge_timestamps = edge_timestamps.detach().cpu().numpy()
         if isinstance(interaction_data, torch.Tensor):
-            interaction_data = interaction_data.cpu().numpy()
+            interaction_data = interaction_data.detach().cpu().numpy()
 
         min_time = edge_timestamps.min()
         max_time = edge_timestamps.max()
